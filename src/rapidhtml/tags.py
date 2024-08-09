@@ -5,6 +5,7 @@ import typing
 
 from collections.abc import Iterable
 
+from rapidhtml.callbacks import RapidHTMLCallback
 from rapidhtml.style import StyleSheet
 from rapidhtml.utils import get_app
 
@@ -19,7 +20,7 @@ class BaseTag:
 
     Args:
         *tags: Variable length arguments representing child tags.
-        callback (typing.Callable): A callback function to be added to the tag.
+        callback (typing.Callable | QuickHTMLCallback): A callback function to be added to the tag.
         **attrs: Keyword arguments representing tag attributes.
 
     Attributes:
@@ -32,8 +33,10 @@ class BaseTag:
         render(): Renders the HTML representation of the tag and its child tags.
     """
 
-    def __init__(self, *tags, callback: typing.Callable = None, **attrs):
-        self.tag = self.__class__.__qualname__.lower()
+    def __init__(
+        self, *tags, callback: typing.Callable | RapidHTMLCallback = None, **attrs
+    ):
+        self.tag = self.__class__.__qualname__.lower().replace("htmltag", "")
         self.tags = list(tags)
         self.attrs = attrs
         if callback:
@@ -60,21 +63,23 @@ class BaseTag:
         """
         return get_app()
 
-    def add_callback(self, callback: typing.Callable):
+    def add_callback(self, callback: typing.Callable | RapidHTMLCallback):
         """
         Adds a callback function to the tag.
 
         Args:
             callback (typing.Callable): The callback function to be added.
         """
+        method = "get"
+        if isinstance(callback, RapidHTMLCallback):
+            callback, method, attrs = callback.get_data()
+            self.attrs.update(attrs)
+
         self.callback_route = f"/python-callbacks/{id(callback)}"
 
-        self.app.add_route(
-            self.callback_route,
-            callback,
-        )
+        self.app.add_route(self.callback_route, callback, [method])
 
-        self.attrs["hx-get"] = self.callback_route
+        self.attrs[f"hx-{method}"] = self.callback_route
 
     def add_head(self, head: typing.Iterable["BaseTag"] | "BaseTag"):
         """
@@ -104,6 +109,10 @@ class BaseTag:
             # Translate value None to 'none'
             if value is None:
                 value = "none"
+
+            if value is True:
+                ret_html += f"{key} "
+                continue
 
             # Replace underscores with hyphens
             key = key.replace("_", "-")
